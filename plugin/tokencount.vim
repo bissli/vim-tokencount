@@ -10,7 +10,7 @@ let g:tokencount_executable = get(g:, 'tokencount_executable',
 
 let g:tokencount_debounce_ms = get(g:, 'tokencount_debounce_ms', 40)
 let g:tokencount_max_bytes   = get(g:, 'tokencount_max_bytes', 200 * 1024)
-let g:tokencount_label       = get(g:, 'tokencount_label', 'Tok~')
+let g:tokencount_label       = get(g:, 'tokencount_label', 'Tok:')
 let g:tokencount_fast        = get(g:, 'tokencount_fast', 0)
 
 augroup tokencount

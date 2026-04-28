@@ -40,9 +40,9 @@ so the segment only appears inside visual mode.
 | variable                   | default                                   | meaning                                    |
 | -------------------------- | ----------------------------------------- | ------------------------------------------ |
 | `g:tokencount_executable`  | `<plugin_root>/target/release/tokencount` | binary path                                |
-| `g:tokencount_debounce_ms` | `80`                                      | ms to wait after last cursor move          |
+| `g:tokencount_debounce_ms` | `40`                                      | ms to wait after last cursor move          |
 | `g:tokencount_max_bytes`   | `204800`                                  | selections above this show `>big`          |
-| `g:tokencount_label`       | `Tok~`                                    | prefix shown before the count              |
+| `g:tokencount_label`       | `Tok:`                                    | prefix shown before the count              |
 | `g:tokencount_fast`        | `0`                                       | if `1`, skip the binary, use `bytes / 3.5` |
 
 ## Commands
@@ -64,10 +64,10 @@ published an offline tokenizer, so the count is an approximation:
 - Vs. Claude Opus 4.7 (new tokenizer): drift can exceed 30% on code and
   markdown.
 
-The default `Tok~` label is a deliberate honesty signal: treat the count as
-an order-of-magnitude indicator, not a billing-grade number. If you need
-exact Claude counts, drive Anthropic's `count_tokens` HTTP endpoint — but a
-network roundtrip is too slow for a debounced statusline indicator.
+Treat the count as an order-of-magnitude indicator, not a billing-grade
+number. If you need exact Claude counts, drive Anthropic's `count_tokens`
+HTTP endpoint — but a network roundtrip is too slow for a debounced
+statusline indicator.
 
 ## License
 

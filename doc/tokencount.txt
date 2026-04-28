@@ -52,8 +52,8 @@ Selections larger than this byte count are not tokenized; the indicator
 shows `>big`. Default: 204800 (200 KB).
 
                                                             *g:tokencount_label*
-Prefix shown before the number. Default: `Tok~` (the tilde signals the
-result is approximate; see |tokencount-accuracy|).
+Prefix shown before the number. Default: `Tok:`. The count is approximate
+for Claude models; see |tokencount-accuracy|.
 
                                                              *g:tokencount_fast*
 If 1, skip the Rust binary entirely and report `bytes / 3.5` as a fast
@@ -73,19 +73,21 @@ approximation. Default: 0.
 
                                                        *TokenCountStatus()*
 TokenCountStatus()      Statusline-friendly string. Empty outside visual
-                        mode, `Tok~ N` inside, `Tok~ >big` if the selection
+                        mode, `Tok: N` inside, `Tok: >big` if the selection
                         exceeds |g:tokencount_max_bytes|.
 
 ==============================================================================
 7. ACCURACY                                               *tokencount-accuracy*
 
-The `claude-tokenizer` crate bundles tokenizer data extracted from Anthropic's
-Python SDK and predates Claude 3. Independent measurements suggest:
+The binary uses `tiktoken-rs` with OpenAI's `cl100k_base` tokenizer (the
+GPT-4 / GPT-3.5-turbo tokenizer). It is not Claude's tokenizer. Anthropic
+has never released an offline tokenizer, so the count is an approximation:
 
-  - Claude Haiku 4.5 / Sonnet 4.6: roughly 9-16% mean absolute error
-  - Claude Opus 4.7 (new tokenizer): 20-50% undercount on code/markdown
+  - vs. GPT-4 / GPT-3.5:                exact
+  - vs. Claude 3.x / 4.x (non-Opus 4.7): typically within 10-15%
+  - vs. Claude Opus 4.7 (new tokenizer): can exceed 30% drift on code
 
 Treat the count as an order-of-magnitude indicator, not a billing-grade
-number. The tilde in the default label is a deliberate honesty signal.
+number.
 
  vim:tw=78:ts=8:ft=help:norl:
