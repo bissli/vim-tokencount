@@ -30,6 +30,10 @@ func! s:redraw_soon() abort
     call timer_start(0, {-> execute('redrawstatus')})
 endfunc
 
+func! s:b64(txt) abort
+    return base64_encode(list2blob(str2list(a:txt, 1)))
+endfunc
+
 func! s:on_reply(ch, msg) abort
     let parts = split(a:msg, ' ')
     if len(parts) != 2
@@ -71,7 +75,7 @@ func! s:send() abort
         return
     endif
     let b:tokencount_pending = get(b:, 'tokencount_pending', 0) + 1
-    call ch_sendraw(s:job, b:tokencount_pending . ' ' . base64_encode(txt) . "\n")
+    call ch_sendraw(s:job, b:tokencount_pending . ' ' . s:b64(txt) . "\n")
 endfunc
 
 func! tokencount#on_event() abort
@@ -121,6 +125,6 @@ func! tokencount#count_range(l1, l2) abort
         return
     endif
     let b:tokencount_pending = get(b:, 'tokencount_pending', 0) + 1
-    call ch_sendraw(s:job, b:tokencount_pending . ' ' . base64_encode(txt) . "\n")
+    call ch_sendraw(s:job, b:tokencount_pending . ' ' . s:b64(txt) . "\n")
     echo g:tokencount_label . ' (computing...)'
 endfunc
