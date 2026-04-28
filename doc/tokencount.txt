@@ -1,0 +1,91 @@
+*tokencount.txt*  Live token counter for visual selections
+
+==============================================================================
+CONTENTS                                                  *tokencount-contents*
+
+  1. Introduction................................|tokencount-intro|
+  2. Requirements................................|tokencount-requirements|
+  3. Statusline integration......................|tokencount-statusline|
+  4. Configuration...............................|tokencount-config|
+  5. Commands....................................|tokencount-commands|
+  6. Functions...................................|tokencount-functions|
+  7. Accuracy....................................|tokencount-accuracy|
+
+==============================================================================
+1. INTRODUCTION                                              *tokencount-intro*
+
+vim-tokencount displays a live, debounced token count for the current visual
+selection. It pipes the selection text to a long-lived Rust process that uses
+the `claude-tokenizer` crate to produce an offline approximation of Claude's
+tokenizer. A pure-vimscript fallback is available for users who do not want
+to compile a binary.
+
+==============================================================================
+2. REQUIREMENTS                                       *tokencount-requirements*
+
+  - Vim 9.1 or newer (for `getregion()` and `base64_encode()`)
+  - +job and +timers
+  - A Rust toolchain (`cargo`) at install time, OR `g:tokencount_fast = 1`
+
+==============================================================================
+3. STATUSLINE INTEGRATION                              *tokencount-statusline*
+
+Embed the result of |TokenCountStatus()| anywhere in your 'statusline'. The
+function returns an empty string outside visual mode, so wrap it in a `%(..%)`
+group to suppress separators when nothing is selected: >
+
+    set statusline+=\ %(\ %{TokenCountStatus()}%)
+
+==============================================================================
+4. CONFIGURATION                                            *tokencount-config*
+
+                                                       *g:tokencount_executable*
+Path to the compiled tokenizer binary. Defaults to the plugin's own
+`target/release/tokencount`. Override to use a system-installed copy.
+
+                                                      *g:tokencount_debounce_ms*
+Milliseconds to wait after the last cursor move before sending a count
+request. Default: 80.
+
+                                                        *g:tokencount_max_bytes*
+Selections larger than this byte count are not tokenized; the indicator
+shows `>big`. Default: 204800 (200 KB).
+
+                                                            *g:tokencount_label*
+Prefix shown before the number. Default: `Tok~` (the tilde signals the
+result is approximate; see |tokencount-accuracy|).
+
+                                                             *g:tokencount_fast*
+If 1, skip the Rust binary entirely and report `bytes / 3.5` as a fast
+approximation. Default: 0.
+
+==============================================================================
+5. COMMANDS                                               *tokencount-commands*
+
+                                                              *:TokenCount*
+:[range]TokenCount      One-shot count of [range] (default: whole buffer).
+
+                                                        *:TokenCountStatus*
+:TokenCountStatus       Echo a health line: mode, binary path, job status.
+
+==============================================================================
+6. FUNCTIONS                                             *tokencount-functions*
+
+                                                       *TokenCountStatus()*
+TokenCountStatus()      Statusline-friendly string. Empty outside visual
+                        mode, `Tok~ N` inside, `Tok~ >big` if the selection
+                        exceeds |g:tokencount_max_bytes|.
+
+==============================================================================
+7. ACCURACY                                               *tokencount-accuracy*
+
+The `claude-tokenizer` crate bundles tokenizer data extracted from Anthropic's
+Python SDK and predates Claude 3. Independent measurements suggest:
+
+  - Claude Haiku 4.5 / Sonnet 4.6: roughly 9-16% mean absolute error
+  - Claude Opus 4.7 (new tokenizer): 20-50% undercount on code/markdown
+
+Treat the count as an order-of-magnitude indicator, not a billing-grade
+number. The tilde in the default label is a deliberate honesty signal.
+
+ vim:tw=78:ts=8:ft=help:norl:
