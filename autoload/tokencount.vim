@@ -38,7 +38,18 @@ func! s:redraw_soon() abort
 endfunc
 
 func! s:b64(txt) abort
-    return base64_encode(list2blob(str2list(a:txt, 1)))
+    " base64_encode requires Blob (raw bytes), not String. Vim has no direct
+    " string-to-utf8-bytes builtin on 9.2, so build the blob byte-by-byte
+    " using strpart with byte length.
+    let blob = 0z
+    let n = strlen(a:txt)
+    let i = 0
+    while i < n
+        let blob += 0z00
+        let blob[i] = char2nr(strpart(a:txt, i, 1))
+        let i += 1
+    endwhile
+    return base64_encode(blob)
 endfunc
 
 func! s:on_reply(ch, msg) abort
