@@ -1,7 +1,9 @@
-.PHONY: build clean
+.PHONY: build install clean
 
 build:
-	cargo build --release
+	./install.sh
+
+install: build
 
 clean:
 	cargo clean

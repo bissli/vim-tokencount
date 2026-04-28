@@ -7,8 +7,8 @@ long-lived Rust process that approximates Claude's tokenizer, with an
 ## Requirements
 
 - Vim 9.1+ (uses `getregion()` and `base64_encode()`)
-- `cargo` at install time, OR set `g:tokencount_fast = 1` to skip the
-  binary and use a `chars / 3.5` heuristic
+- `curl` for prebuilt asset download, OR `cargo` for source build, OR set
+  `g:tokencount_fast = 1` to skip the binary entirely
 
 ## Install (vim-plug)
 
@@ -16,11 +16,15 @@ long-lived Rust process that approximates Claude's tokenizer, with an
 Plug 'bissli/vim-tokencount', { 'do': 'make build' }
 ```
 
-For a local checkout:
+`make build` runs `install.sh`, which tries this in order:
 
-```vim
-Plug 'file:///path/to/vim-tokencount', { 'do': 'make build' }
-```
+1. If `target/release/tokencount` already exists, do nothing.
+2. Download the matching prebuilt binary from the latest GitHub Release
+   (linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64). Verifies
+   SHA-256 before installing. Typically completes in seconds.
+3. Fall back to `cargo build --release` if no asset matches your platform
+   or the download fails. This pulls in the `tokenizers` crate transitively
+   and takes 1-2 minutes on first build.
 
 Then add a segment to your statusline:
 
