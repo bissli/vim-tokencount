@@ -25,7 +25,6 @@ case "$uname_s-$uname_m" in
     Linux-x86_64)   ASSET="tokencount-linux-x86_64" ;;
     Linux-aarch64)  ASSET="tokencount-linux-aarch64" ;;
     Linux-arm64)    ASSET="tokencount-linux-aarch64" ;;
-    Darwin-x86_64)  ASSET="tokencount-macos-x86_64" ;;
     Darwin-arm64)   ASSET="tokencount-macos-aarch64" ;;
     *)              ASSET="" ;;
 esac
