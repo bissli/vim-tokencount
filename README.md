@@ -52,16 +52,22 @@ so the segment only appears inside visual mode.
 
 ## Accuracy
 
-The `claude-tokenizer` crate ships tokenizer data extracted from Anthropic's
-Python SDK; it predates Claude 3 and was last updated in September 2024.
-Expect roughly 9-16% mean absolute error vs. the official `count_tokens` API
-on Claude 3.x and 4.x non-Opus-4.7 models, and 20-50% drift on Opus 4.7
-(which ships a new tokenizer). The default `Tok~` label is a deliberate
-honesty signal: this is an order-of-magnitude indicator, not a billing-grade
-number.
+The binary uses [`tiktoken-rs`](https://github.com/zurawiki/tiktoken-rs) with
+OpenAI's `cl100k_base` tokenizer — the same tokenizer used by GPT-4 and
+GPT-3.5-turbo. It is **not** Claude's tokenizer. Anthropic has never
+published an offline tokenizer, so the count is an approximation:
 
-If you need exact counts, drive Anthropic's `count_tokens` HTTP endpoint —
-but a network roundtrip is too slow for a debounced statusline indicator.
+- Vs. GPT-4 / GPT-3.5: exact.
+- Vs. Claude 3.x / 4.x (non-Opus-4.7): typically within 10-15%, since BPE
+  tokenizers in the same vocab-size range produce similar counts on English
+  prose and code.
+- Vs. Claude Opus 4.7 (new tokenizer): drift can exceed 30% on code and
+  markdown.
+
+The default `Tok~` label is a deliberate honesty signal: treat the count as
+an order-of-magnitude indicator, not a billing-grade number. If you need
+exact Claude counts, drive Anthropic's `count_tokens` HTTP endpoint — but a
+network roundtrip is too slow for a debounced statusline indicator.
 
 ## License
 

@@ -1,8 +1,9 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use claude_tokenizer::count_tokens;
 use std::io::{self, BufRead, Write};
+use tiktoken_rs::cl100k_base_singleton;
 
 fn main() {
+    let bpe_arc = cl100k_base_singleton();
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -29,7 +30,7 @@ fn main() {
             }
         };
         let text = String::from_utf8_lossy(&bytes);
-        let count = count_tokens(&text).unwrap_or(0);
+        let count = bpe_arc.lock().encode_with_special_tokens(&text).len();
         let _ = writeln!(out, "{} {}", seq, count);
         let _ = out.flush();
     }

@@ -3,10 +3,10 @@ name = "tokencount"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "stdin loop that counts Claude tokens for vim-tokencount"
+description = "stdin loop that counts tokens for vim-tokencount"
 
 [dependencies]
-claude-tokenizer = "0.3"
+tiktoken-rs = "0.6"
 base64 = "0.22"
 
 [profile.release]
