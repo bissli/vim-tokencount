@@ -1,6 +1,12 @@
 let s:job = v:null
 let s:timer = -1
 
+func! s:on_err(ch, msg) abort
+    echohl WarningMsg
+    echom 'tokencount: ' . a:msg
+    echohl None
+endfunc
+
 func! s:start_job() abort
     if type(s:job) == v:t_job && job_status(s:job) ==# 'run'
         return v:true
@@ -12,6 +18,7 @@ func! s:start_job() abort
         \ 'in_mode': 'nl',
         \ 'out_mode': 'nl',
         \ 'out_cb': function('s:on_reply'),
+        \ 'err_cb': function('s:on_err'),
         \ 'stoponexit': 'term',
         \ })
     return type(s:job) == v:t_job
@@ -67,7 +74,7 @@ func! s:send() abort
         return
     endif
     if g:tokencount_fast
-        let b:tokencount_value = float2nr(bytes / 3.5)
+        let b:tokencount_value = float2nr(strcharlen(txt) / 3.5)
         call s:redraw_soon()
         return
     endif
@@ -117,14 +124,22 @@ func! tokencount#count_range(l1, l2) abort
         return
     endif
     if g:tokencount_fast
-        echo printf('%s %d', g:tokencount_label, float2nr(strlen(txt) / 3.5))
+        echo printf('%s %d', g:tokencount_label, float2nr(strcharlen(txt) / 3.5))
         return
     endif
     if !s:start_job()
         echo 'tokencount: binary missing; run `make build` in plugin root'
         return
     endif
-    let b:tokencount_pending = get(b:, 'tokencount_pending', 0) + 1
-    call ch_sendraw(s:job, b:tokencount_pending . ' ' . s:b64(txt) . "\n")
-    echo g:tokencount_label . ' (computing...)'
+    let ch = job_getchannel(s:job)
+    let sentinel = 'r' . reltimestr(reltime())
+    let sentinel = substitute(sentinel, '\.', '', 'g')
+    let reply = ch_evalraw(ch, sentinel . ' ' . s:b64(txt) . "\n",
+        \ {'timeout': 5000})
+    let parts = split(reply, ' ')
+    if len(parts) == 2 && parts[0] ==# sentinel
+        echo printf('%s %d', g:tokencount_label, str2nr(parts[1]))
+    else
+        echo g:tokencount_label . ' (no reply)'
+    endif
 endfunc
