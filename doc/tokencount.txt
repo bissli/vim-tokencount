@@ -45,11 +45,13 @@ Path to the compiled tokenizer binary. Defaults to the plugin's own
 
                                                       *g:tokencount_debounce_ms*
 Milliseconds to wait after the last cursor move before sending a count
-request. Default: 80.
+request. Default: 40.
 
                                                         *g:tokencount_max_bytes*
 Selections larger than this byte count are not tokenized; the indicator
-shows `>big`. Default: 204800 (200 KB).
+shows `>big`. Default: 204800 (200 KB). The cap is enforced cheaply via
+|line2byte()| before any text is extracted, so selecting an entire huge
+file does not stall vim.
 
                                                             *g:tokencount_label*
 Prefix shown before the number. Default: `Tok:`. The count is approximate
