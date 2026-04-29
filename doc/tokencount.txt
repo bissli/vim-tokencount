@@ -15,15 +15,17 @@ CONTENTS                                                  *tokencount-contents*
 1. INTRODUCTION                                              *tokencount-intro*
 
 vim-tokencount displays a live, debounced token count for the current visual
-selection. It pipes the selection text to a long-lived Rust process that uses
-the `claude-tokenizer` crate to produce an offline approximation of Claude's
-tokenizer. A pure-vimscript fallback is available for users who do not want
-to compile a binary.
+selection and a one-shot count for any range or buffer. It pipes the text to
+a long-lived Rust process running `tiktoken-rs` and reads the reply via an
+asynchronous channel callback. Vim is never blocked: large selections,
+whole-buffer counts, and very long files all return to the user immediately;
+the count appears when the worker replies. A pure-vimscript approximation
+is available for users who do not want to compile a binary.
 
 ==============================================================================
 2. REQUIREMENTS                                       *tokencount-requirements*
 
-  - Vim 9.1 or newer (for `getregion()` and `base64_encode()`)
+  - Vim 9.1.1016 or newer (for `getregion()`, `str2blob()`, `noblock`)
   - +job and +timers
   - A Rust toolchain (`cargo`) at install time, OR `g:tokencount_fast = 1`
 
@@ -47,18 +49,12 @@ Path to the compiled tokenizer binary. Defaults to the plugin's own
 Milliseconds to wait after the last cursor move before sending a count
 request. Default: 40.
 
-                                                        *g:tokencount_max_bytes*
-Selections larger than this byte count are not tokenized; the indicator
-shows `>big`. Default: 204800 (200 KB). The cap is enforced cheaply via
-|line2byte()| before any text is extracted, so selecting an entire huge
-file does not stall vim.
-
                                                             *g:tokencount_label*
 Prefix shown before the number. Default: `Tok:`. The count is approximate
 for Claude models; see |tokencount-accuracy|.
 
                                                              *g:tokencount_fast*
-If 1, skip the Rust binary entirely and report `bytes / 3.5` as a fast
+If 1, skip the Rust binary entirely and report `chars / 3.5` as a fast
 approximation. Default: 0.
 
 ==============================================================================
@@ -66,6 +62,11 @@ approximation. Default: 0.
 
                                                               *:TokenCount*
 :[range]TokenCount      One-shot count of [range] (default: whole buffer).
+                        Returns immediately and prints `Tok: ...` in the
+                        message line. The real count is shown via |echom|
+                        when the worker replies (also visible in
+                        |:messages|). There is no size cap; whole-buffer
+                        counts on very large files are supported.
 
                                                         *:TokenCountStatus*
 :TokenCountStatus       Echo a health line: mode, binary path, job status.
@@ -75,8 +76,9 @@ approximation. Default: 0.
 
                                                        *TokenCountStatus()*
 TokenCountStatus()      Statusline-friendly string. Empty outside visual
-                        mode, `Tok: N` inside, `Tok: >big` if the selection
-                        exceeds |g:tokencount_max_bytes|.
+                        mode, `Tok: N` inside. Updates asynchronously as
+                        the selection changes; previous count remains
+                        visible until the next reply lands.
 
 ==============================================================================
 7. ACCURACY                                               *tokencount-accuracy*

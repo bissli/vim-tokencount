@@ -1,5 +1,5 @@
 " Self-contained tests for vim-tokencount.
-" Usage: vim -es -u NONE -i NONE -c 'set nocp' -S test/test.vim
+" Usage: test/run.sh
 
 set rtp+=.
 let s:plugin_root = expand('<sfile>:p:h:h')
@@ -23,8 +23,7 @@ func! s:autoload_sid() abort
 endfunc
 
 let s:sid = s:autoload_sid()
-let s:b64       = function('<SNR>' . s:sid . '_b64')
-let s:on_reply  = function('<SNR>' . s:sid . '_on_reply')
+let s:on_reply = function('<SNR>' . s:sid . '_on_reply')
 
 let s:report = []
 
@@ -49,119 +48,69 @@ func! s:run(name, F) abort
 endfunc
 
 
-" -- s:b64 --------------------------------------------------------------
+" -- encoding sanity (no helper to test; verify the inline expression) --
 
-func! Test_b64_ascii() abort
-    call assert_equal('aGVsbG8gd29ybGQ=', s:b64('hello world'))
+func! Test_encoding_lines_to_base64() abort
+    " The autoload sends base64_encode(str2blob(lines)). Confirm the
+    " builtins produce what we expect for a multi-line ASCII selection.
+    let l:lines = ['hello', 'world']
+    call assert_equal('aGVsbG8Kd29ybGQ=',
+        \ base64_encode(str2blob(l:lines)))
 endfunc
 
-func! Test_b64_empty() abort
-    call assert_equal('', s:b64(''))
+func! Test_encoding_handles_unicode() abort
+    let l:lines = ['こんにちは']
+    " Hiragana ko n ni chi ha = 15 UTF-8 bytes.
+    let l:b64 = base64_encode(str2blob(l:lines))
+    call assert_equal(15, len(str2blob(l:lines)))
+    call assert_true(!empty(l:b64))
 endfunc
 
-func! Test_b64_multiline_preserves_newlines() abort
-    " Internal \n must round-trip as 0x0A bytes, not NUL.
-    call assert_equal('YQpiCmM=', s:b64("a\nb\nc"))
-endfunc
-
-func! Test_b64_leading_and_trailing_newlines() abort
-    call assert_equal('CmFiYwo=', s:b64("\nabc\n"))
-endfunc
-
-func! Test_b64_unicode() abort
-    " Hiragana ko, n, ni, chi, ha
-    call assert_equal('44GT44KT44Gr44Gh44Gv',
-        \ s:b64("こんにちは"))
-endfunc
-
-func! Test_b64_str2blob_path_matches_loop_path() abort
-    " Force the fallback loop and compare against the str2blob path.
-    let l:saved = exists('*str2blob')
-    if !l:saved
-        return
-    endif
-    let l:samples = ['', 'hi', "a\nb", "中文", "tab\there"]
-    let l:fast = map(copy(l:samples), 's:b64(v:val)')
-    let l:slow = []
-    for l:txt in l:samples
-        let l:blob = 0z
-        let l:n = strlen(l:txt)
-        let l:i = 0
-        while l:i < l:n
-            let l:blob += 0z00
-            let l:blob[l:i] = char2nr(strpart(l:txt, l:i, 1))
-            let l:i += 1
-        endwhile
-        call add(l:slow, base64_encode(l:blob))
-    endfor
-    call assert_equal(l:slow, l:fast)
+func! Test_encoding_empty_lines() abort
+    " A single empty line should produce no bytes.
+    call assert_equal('', base64_encode(str2blob([''])))
 endfunc
 
 
-" -- bound (via tokencount#_test_bound) ---------------------------------
-
-func! s:populate(lines) abort
-    enew!
-    call setline(1, a:lines)
-endfunc
-
-func! Test_bound_linewise_full_buffer() abort
-    call s:populate(['aaaa', 'bbbb', 'cccc', 'dddd', 'eeee'])
-    " V mode, lines 1..5: 5 lines x (4 ASCII + 1 NL) = 25 bytes.
-    let l:b = tokencount#_test_bound('V', [0, 1, 1, 0], [0, 5, 4, 0])
-    call assert_equal(25, l:b)
-endfunc
-
-func! Test_bound_charwise_two_lines() abort
-    call s:populate(['aaaa', 'bbbb', 'cccc'])
-    " v mode, lines 1..2: line2byte upper bound counts full lines.
-    " 2 lines x (4 + 1) = 10.
-    let l:b = tokencount#_test_bound('v', [0, 1, 1, 0], [0, 2, 4, 0])
-    call assert_equal(10, l:b)
-endfunc
-
-func! Test_bound_blockwise_uses_column_count() abort
-    call s:populate(['aaaaa', 'bbbbb', 'ccccc'])
-    " <C-v> 2 columns x 3 rows: 2 * 4 * 3 + (3 - 1) = 26.
-    let l:b = tokencount#_test_bound("\<C-v>", [0, 1, 1, 0], [0, 3, 2, 0])
-    call assert_equal(26, l:b)
-endfunc
-
-func! Test_bound_blockwise_does_not_explode_on_wide_lines() abort
-    call s:populate(repeat([repeat('x', 5000)], 200))
-    let g:tokencount_max_bytes = 200000
-    " 1 column x 2 rows on 5000-wide lines: must be tiny, not 10000.
-    let l:b = tokencount#_test_bound("\<C-v>", [0, 1, 1, 0], [0, 2, 1, 0])
-    call assert_true(l:b < g:tokencount_max_bytes,
-        \ 'narrow blockwise on wide lines must not be flagged big, got '
-        \ . l:b)
-endfunc
-
-func! Test_bound_returns_zero_when_line2byte_negative() abort
-    enew!
-    " Fresh empty buffer: line2byte returns -1. Bound must return 0
-    " (fall through) rather than a negative number that would mark the
-    " selection as oversized incorrectly.
-    let l:b = tokencount#_test_bound('v', [0, 1, 1, 0], [0, 1, 1, 0])
-    call assert_equal(0, l:b)
-endfunc
-
-
-" -- s:on_reply / dispatcher --------------------------------------------
+" -- dispatcher: visual-buffer routing -----------------------------------
 
 func! Test_on_reply_writes_to_originating_buffer() abort
-    " Two buffers. Mark seq=101 as belonging to A. Switch to B, deliver
-    " reply, confirm A got the value, B did not.
     enew!
     file bufA
     let l:bufA = bufnr('%')
     enew!
     file bufB
     let l:bufB = bufnr('%')
-    call tokencount#_test_pend(101, l:bufA)
+    " bufB is current; reply for seq=101 should land in bufA.
+    call tokencount#_test_pend(101, {'kind': 'buf', 'bufnr': l:bufA})
     call s:on_reply(0, '101 42')
-    call assert_equal(42, getbufvar(l:bufA, 'tokencount_value', -999))
-    call assert_equal(-999, getbufvar(l:bufB, 'tokencount_value', -999))
+    call assert_equal(42,
+        \ getbufvar(l:bufA, 'tokencount_value', -999))
+    call assert_equal(-999,
+        \ getbufvar(l:bufB, 'tokencount_value', -999))
+endfunc
+
+func! Test_on_reply_drops_stale_visual_seq() abort
+    enew!
+    file bufStale
+    let l:buf = bufnr('%')
+    call setbufvar(l:buf, 'tokencount_latest_seq', 200)
+    call setbufvar(l:buf, 'tokencount_value', 99)
+    " Reply with an older seq must be ignored.
+    call tokencount#_test_pend(150, {'kind': 'buf', 'bufnr': l:buf})
+    call s:on_reply(0, '150 7')
+    call assert_equal(99, getbufvar(l:buf, 'tokencount_value'))
+endfunc
+
+func! Test_on_reply_applies_latest_visual_seq() abort
+    enew!
+    file bufFresh
+    let l:buf = bufnr('%')
+    call setbufvar(l:buf, 'tokencount_latest_seq', 100)
+    call setbufvar(l:buf, 'tokencount_value', 99)
+    call tokencount#_test_pend(100, {'kind': 'buf', 'bufnr': l:buf})
+    call s:on_reply(0, '100 555')
+    call assert_equal(555, getbufvar(l:buf, 'tokencount_value'))
 endfunc
 
 func! Test_on_reply_drops_unknown_seq() abort
@@ -171,13 +120,31 @@ func! Test_on_reply_drops_unknown_seq() abort
         unlet b:tokencount_value
     endif
     call s:on_reply(0, '99999 42')
-    call assert_equal(-999, getbufvar(l:buf, 'tokencount_value', -999))
+    call assert_equal(-999,
+        \ getbufvar(l:buf, 'tokencount_value', -999))
 endfunc
 
 func! Test_on_reply_ignores_malformed_msg() abort
     let l:before = len(v:errors)
     call s:on_reply(0, 'no-space')
     call s:on_reply(0, '1 2 3')
+    call assert_equal(l:before, len(v:errors))
+endfunc
+
+
+" -- dispatcher: echo routing -------------------------------------------
+
+func! Test_on_reply_echo_target_writes_message() abort
+    call tokencount#_test_pend(401, {'kind': 'echo'})
+    let l:before = len(v:errors)
+    redir => l:msgs
+    silent messages clear
+    redir END
+    call s:on_reply(0, '401 17')
+    redir => l:msgs
+    silent messages
+    redir END
+    call assert_match(g:tokencount_label . ' 17', l:msgs)
     call assert_equal(l:before, len(v:errors))
 endfunc
 
@@ -204,43 +171,11 @@ func! Test_status_shows_count() abort
     call assert_equal(g:tokencount_label . ' 17', tokencount#status())
 endfunc
 
-func! Test_status_shows_big_when_negative() abort
-    enew!
-    let b:tokencount_value = -1
-    call assert_equal(g:tokencount_label . ' >big', tokencount#status())
-endfunc
 
-
-" -- tokencount#count_range guard ---------------------------------------
-
-func! Test_count_range_big_buffer_short_circuits() abort
-    enew!
-    let g:tokencount_max_bytes = 1024
-    " Build 4 KB of content: easily over 1 KB cap.
-    let l:big = repeat(['lorem ipsum dolor sit amet, consectetur adipiscing'], 100)
-    call setline(1, l:big)
-    redir => l:out
-    silent call tokencount#count_range(1, line('$'))
-    redir END
-    call assert_match('>big', l:out)
-endfunc
-
-func! Test_count_range_uses_fast_mode_when_set() abort
-    enew!
-    let g:tokencount_max_bytes = 200000
-    let g:tokencount_fast = 1
-    call setline(1, ['hello world hello world'])
-    redir => l:out
-    silent call tokencount#count_range(1, 1)
-    redir END
-    let g:tokencount_fast = 0
-    " 23 chars / 3.5 ~= 6
-    call assert_match(g:tokencount_label . ' \d\+', l:out)
-endfunc
+" -- tokencount#count_range --------------------------------------------
 
 func! Test_count_range_empty_returns_zero() abort
     enew!
-    let g:tokencount_max_bytes = 200000
     let g:tokencount_fast = 0
     redir => l:out
     silent call tokencount#count_range(1, 1)
@@ -248,54 +183,80 @@ func! Test_count_range_empty_returns_zero() abort
     call assert_match(g:tokencount_label . ' 0', l:out)
 endfunc
 
+func! Test_count_range_fast_mode_echoes_immediately() abort
+    enew!
+    call setline(1, ['hello world hello world'])
+    let g:tokencount_fast = 1
+    redir => l:out
+    silent call tokencount#count_range(1, 1)
+    redir END
+    let g:tokencount_fast = 0
+    call assert_match(g:tokencount_label . ' \d\+', l:out)
+endfunc
+
+func! Test_count_range_huge_buffer_echoes_placeholder_immediately() abort
+    " A huge buffer must NOT freeze count_range; it must echo the
+    " placeholder synchronously and return.
+    enew!
+    let g:tokencount_fast = 0
+    let g:tokencount_executable = '/nonexistent/binary'
+    " Create ~1 MB of content. Without a binary the function falls
+    " back to a missing-binary message, but it must still return
+    " quickly without iterating in vimscript.
+    let l:big = repeat(['lorem ipsum dolor sit amet, '
+        \ . 'consectetur adipiscing elit'], 20000)
+    call setline(1, l:big)
+    let l:start = reltime()
+    redir => l:out
+    silent call tokencount#count_range(1, line('$'))
+    redir END
+    let l:elapsed_ms = float2nr(reltimefloat(reltime(l:start)) * 1000)
+    call assert_true(l:elapsed_ms < 500,
+        \ 'count_range took ' . l:elapsed_ms . 'ms on ~1 MB buffer')
+endfunc
+
 
 " -- run all ------------------------------------------------------------
 
 let s:tests = [
-    \ ['b64_ascii', function('Test_b64_ascii')],
-    \ ['b64_empty', function('Test_b64_empty')],
-    \ ['b64_multiline_preserves_newlines',
-    \  function('Test_b64_multiline_preserves_newlines')],
-    \ ['b64_leading_and_trailing_newlines',
-    \  function('Test_b64_leading_and_trailing_newlines')],
-    \ ['b64_unicode', function('Test_b64_unicode')],
-    \ ['b64_str2blob_path_matches_loop_path',
-    \  function('Test_b64_str2blob_path_matches_loop_path')],
-    \ ['bound_linewise_full_buffer',
-    \  function('Test_bound_linewise_full_buffer')],
-    \ ['bound_charwise_two_lines',
-    \  function('Test_bound_charwise_two_lines')],
-    \ ['bound_blockwise_uses_column_count',
-    \  function('Test_bound_blockwise_uses_column_count')],
-    \ ['bound_blockwise_does_not_explode_on_wide_lines',
-    \  function('Test_bound_blockwise_does_not_explode_on_wide_lines')],
-    \ ['bound_returns_zero_when_line2byte_negative',
-    \  function('Test_bound_returns_zero_when_line2byte_negative')],
+    \ ['encoding_lines_to_base64',
+    \  function('Test_encoding_lines_to_base64')],
+    \ ['encoding_handles_unicode',
+    \  function('Test_encoding_handles_unicode')],
+    \ ['encoding_empty_lines',
+    \  function('Test_encoding_empty_lines')],
     \ ['on_reply_writes_to_originating_buffer',
     \  function('Test_on_reply_writes_to_originating_buffer')],
+    \ ['on_reply_drops_stale_visual_seq',
+    \  function('Test_on_reply_drops_stale_visual_seq')],
+    \ ['on_reply_applies_latest_visual_seq',
+    \  function('Test_on_reply_applies_latest_visual_seq')],
     \ ['on_reply_drops_unknown_seq',
     \  function('Test_on_reply_drops_unknown_seq')],
     \ ['on_reply_ignores_malformed_msg',
     \  function('Test_on_reply_ignores_malformed_msg')],
+    \ ['on_reply_echo_target_writes_message',
+    \  function('Test_on_reply_echo_target_writes_message')],
     \ ['status_empty_when_unset',
     \  function('Test_status_empty_when_unset')],
-    \ ['status_empty_when_zero', function('Test_status_empty_when_zero')],
-    \ ['status_shows_count', function('Test_status_shows_count')],
-    \ ['status_shows_big_when_negative',
-    \  function('Test_status_shows_big_when_negative')],
-    \ ['count_range_big_buffer_short_circuits',
-    \  function('Test_count_range_big_buffer_short_circuits')],
-    \ ['count_range_uses_fast_mode_when_set',
-    \  function('Test_count_range_uses_fast_mode_when_set')],
+    \ ['status_empty_when_zero',
+    \  function('Test_status_empty_when_zero')],
+    \ ['status_shows_count',
+    \  function('Test_status_shows_count')],
     \ ['count_range_empty_returns_zero',
     \  function('Test_count_range_empty_returns_zero')],
+    \ ['count_range_fast_mode_echoes_immediately',
+    \  function('Test_count_range_fast_mode_echoes_immediately')],
+    \ ['count_range_huge_buffer_echoes_placeholder_immediately',
+    \  function('Test_count_range_huge_buffer_echoes_placeholder_immediately')],
     \ ]
 
 for [s:name, s:F] in s:tests
     call s:run(s:name, s:F)
 endfor
 
-call s:emit(printf('%d tests, %d errors', len(s:tests), len(v:errors)))
+call s:emit(printf('%d tests, %d errors',
+    \ len(s:tests), len(v:errors)))
 for s:e in v:errors
     call s:emit('  ' . s:e)
 endfor

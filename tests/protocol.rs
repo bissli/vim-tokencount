@@ -141,6 +141,17 @@ fn long_payload_near_cap_succeeds() {
 }
 
 #[test]
+fn large_one_megabyte_payload_succeeds() {
+    let mut t = Tokenizer::spawn();
+    let text = "the quick brown fox jumps over the lazy dog. ".repeat(25_000);
+    assert!(text.len() >= 1_000_000, "test payload too small");
+    t.send("1", &text);
+    let (seq, count) = t.recv();
+    assert_eq!(seq, "1");
+    assert!(count > 100_000, "expected many tokens, got {count}");
+}
+
+#[test]
 fn whitespace_only_payload() {
     let mut t = Tokenizer::spawn();
     t.send("1", "    \n\t\n   ");
