@@ -37,7 +37,7 @@ jobs:
       - name: Install vim
         uses: rhysd/action-setup-vim@v1
         with:
-          version: head
+          version: v9.1.1500
 
       - name: Vim tests
         run: test/run.sh
