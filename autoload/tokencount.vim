@@ -58,21 +58,31 @@ func! s:b64(txt) abort
     return base64_encode(blob)
 endfunc
 
-func! s:selection_byte_upper_bound() abort
-    let sp = getpos('v')
-    let ep = getpos('.')
-    let l1 = min([sp[1], ep[1]])
-    let l2 = max([sp[1], ep[1]])
-    if mode() ==# "\<C-v>"
-        let cols = abs(ep[2] - sp[2]) + 1
+func! s:bound(mode_str, sp, ep) abort
+    let l1 = min([a:sp[1], a:ep[1]])
+    let l2 = max([a:sp[1], a:ep[1]])
+    if a:mode_str ==# "\<C-v>"
+        let cols = abs(a:ep[2] - a:sp[2]) + 1
         return cols * 4 * (l2 - l1 + 1) + (l2 - l1)
     endif
     let a = line2byte(l1)
     let b = line2byte(l2 + 1)
     if a < 0 || b < 0
-        return g:tokencount_max_bytes + 1
+        return 0
     endif
     return b - a
+endfunc
+
+func! s:selection_byte_upper_bound() abort
+    return s:bound(mode(), getpos('v'), getpos('.'))
+endfunc
+
+func! tokencount#_test_bound(mode_str, sp, ep) abort
+    return s:bound(a:mode_str, a:sp, a:ep)
+endfunc
+
+func! tokencount#_test_pend(seq, bufnr) abort
+    let s:pending_visual[a:seq] = a:bufnr
 endfunc
 
 func! s:on_reply(ch, msg) abort
@@ -162,7 +172,7 @@ endfunc
 func! tokencount#count_range(l1, l2) abort
     let a = line2byte(a:l1)
     let b = line2byte(a:l2 + 1)
-    if a < 0 || b < 0 || (b - a) > g:tokencount_max_bytes
+    if a > 0 && b > 0 && (b - a) > g:tokencount_max_bytes
         echo g:tokencount_label . ' >big'
         return
     endif
