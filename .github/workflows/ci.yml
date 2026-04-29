@@ -30,3 +30,14 @@ jobs:
         run: |
           printf '1 %s\n' "$(printf 'hello world' | base64 | tr -d '\n')" \
             | target/release/tokencount
+
+      - name: Cargo tests
+        run: cargo test --release --locked
+
+      - name: Install vim
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y vim
+
+      - name: Vim tests
+        run: test/run.sh
