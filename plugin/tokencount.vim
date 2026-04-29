@@ -2,7 +2,7 @@ if exists('g:loaded_tokencount') | finish | endif
 let g:loaded_tokencount = 1
 
 if !has('job') || !has('timers') | finish | endif
-if v:version < 901 | finish | endif
+if v:version < 901 || !exists('*str2blob') | finish | endif
 
 let s:plugin_root = expand('<sfile>:p:h:h')
 let g:tokencount_executable = get(g:, 'tokencount_executable',

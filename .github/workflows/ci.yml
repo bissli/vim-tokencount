@@ -35,9 +35,9 @@ jobs:
         run: cargo test --release --locked
 
       - name: Install vim
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y vim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          version: stable
 
       - name: Vim tests
         run: test/run.sh
