@@ -1,16 +1,15 @@
 if exists('g:loaded_tokencount') | finish | endif
 let g:loaded_tokencount = 1
 
-if !has('job') || !has('timers') | finish | endif
-if v:version < 901 || !exists('*str2blob') | finish | endif
-
 let s:plugin_root = expand('<sfile>:p:h:h')
 let g:tokencount_executable = get(g:, 'tokencount_executable',
     \ s:plugin_root . '/target/release/tokencount')
-
 let g:tokencount_debounce_ms = get(g:, 'tokencount_debounce_ms', 40)
 let g:tokencount_label       = get(g:, 'tokencount_label', 'Tok:')
 let g:tokencount_fast        = get(g:, 'tokencount_fast', 0)
+
+if !has('job') || !has('timers') | finish | endif
+if v:version < 901 || !exists('*str2blob') | finish | endif
 
 augroup tokencount
     autocmd!
