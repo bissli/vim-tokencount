@@ -31,6 +31,19 @@ impl Tokenizer {
         self.stdin.flush().unwrap();
     }
 
+    fn send_chunk(&mut self, seq: &str, sid: u64, idx: u32, total: u32, text: &str) {
+        let line = format!(
+            "{} session={} chunk={}/{} {}\n",
+            seq,
+            sid,
+            idx,
+            total,
+            STANDARD.encode(text),
+        );
+        self.stdin.write_all(line.as_bytes()).unwrap();
+        self.stdin.flush().unwrap();
+    }
+
     fn send_raw(&mut self, line: &str) {
         self.stdin.write_all(line.as_bytes()).unwrap();
         self.stdin.write_all(b"\n").unwrap();
@@ -158,6 +171,95 @@ fn whitespace_only_payload() {
     let (seq, count) = t.recv();
     assert_eq!(seq, "1");
     assert!(count > 0);
+}
+
+#[test]
+fn chunked_running_total_is_monotonic_and_close_to_single_shot() {
+    let mut t = Tokenizer::spawn();
+    let parts = [
+        "line one of the log\n",
+        "line two of the log\n",
+        "line three of the log\n",
+    ];
+    let whole: String = parts.concat();
+
+    t.send("solo", &whole);
+    let (_, single_count) = t.recv();
+
+    for (i, part) in parts.iter().enumerate() {
+        let seq = format!("c{i}");
+        t.send_chunk(&seq, 42, i as u32, parts.len() as u32, part);
+    }
+    let mut last = 0u32;
+    for i in 0..parts.len() {
+        let (got_seq, total) = t.recv();
+        assert_eq!(got_seq, format!("c{i}"));
+        assert!(total >= last, "running total went backwards: {total} < {last}");
+        last = total;
+    }
+    let drift = last.abs_diff(single_count);
+    assert!(
+        drift <= 3 * parts.len() as u32,
+        "chunked total drifted too far from single-shot: chunked={last} single={single_count}",
+    );
+}
+
+#[test]
+fn new_session_resets_running_total() {
+    let mut t = Tokenizer::spawn();
+    t.send_chunk("a0", 1, 0, 2, "alpha alpha alpha");
+    let (_, total_a0) = t.recv();
+    assert!(total_a0 > 0);
+
+    t.send_chunk("b0", 2, 0, 1, "beta");
+    let (_, total_b0) = t.recv();
+    t.send("solo", "beta");
+    let (_, single_beta) = t.recv();
+    assert_eq!(
+        total_b0, single_beta,
+        "new session leaked totals from prior session",
+    );
+}
+
+#[test]
+fn legacy_request_unaffected_by_session_state() {
+    let mut t = Tokenizer::spawn();
+    t.send_chunk("c0", 7, 0, 2, "running running running");
+    let (_, _running) = t.recv();
+    t.send("plain", "hello world");
+    let (seq, count) = t.recv();
+    assert_eq!(seq, "plain");
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn chunked_lru_evicts_oldest_session() {
+    let mut t = Tokenizer::spawn();
+    for sid in 1..=20u64 {
+        let seq = format!("s{sid}");
+        t.send_chunk(&seq, sid, 0, 2, "alpha");
+        let (got_seq, total) = t.recv();
+        assert_eq!(got_seq, seq);
+        assert!(total > 0);
+    }
+    t.send_chunk("evicted", 1, 1, 2, "beta");
+    let (_, after_evict) = t.recv();
+    t.send("solo", "beta");
+    let (_, single_beta) = t.recv();
+    assert_eq!(
+        after_evict, single_beta,
+        "session 1 should have been evicted; chunk 1 should have started a fresh total",
+    );
+}
+
+#[test]
+fn chunked_malformed_session_field_is_skipped() {
+    let mut t = Tokenizer::spawn();
+    t.send_raw("1 session=notanumber chunk=0/1 aGVsbG8=");
+    t.send("2", "hello world");
+    let (seq, count) = t.recv();
+    assert_eq!(seq, "2");
+    assert_eq!(count, 2);
 }
 
 #[test]

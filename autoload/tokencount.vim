@@ -1,6 +1,7 @@
 let s:job = v:null
 let s:timer = -1
 let s:next_seq = 0
+let s:next_session = 0
 let s:pending = {}
 
 func! s:on_err(ch, msg) abort
@@ -52,6 +53,19 @@ func! s:send_lines(lines, target) abort
     return l:seq
 endfunc
 
+func! s:send_chunk_payload(lines, sid, idx, total, target) abort
+    if !s:start_job()
+        return 0
+    endif
+    let s:next_seq += 1
+    let l:seq = s:next_seq
+    let s:pending[l:seq] = a:target
+    let l:payload = base64_encode(str2blob(a:lines))
+    call ch_sendraw(s:job, printf('%d session=%d chunk=%d/%d %s%s',
+        \ l:seq, a:sid, a:idx, a:total, l:payload, "\n"))
+    return l:seq
+endfunc
+
 func! s:on_reply(ch, msg) abort
     let l:parts = split(a:msg, ' ')
     if len(l:parts) != 2
@@ -65,7 +79,13 @@ func! s:on_reply(ch, msg) abort
     let l:target = s:pending[l:seq]
     unlet s:pending[l:seq]
     if l:target.kind ==# 'buf'
-        if l:seq < getbufvar(l:target.bufnr, 'tokencount_latest_seq', 0)
+        if has_key(l:target, 'session')
+            if l:target.session != getbufvar(l:target.bufnr,
+                \ 'tokencount_active_session', 0)
+                return
+            endif
+        elseif l:seq < getbufvar(l:target.bufnr,
+            \ 'tokencount_latest_seq', 0)
             return
         endif
         call setbufvar(l:target.bufnr, 'tokencount_value', l:cnt)
@@ -83,10 +103,66 @@ func! s:fast_count(lines) abort
     return float2nr(l:total / 3.5)
 endfunc
 
+func! s:dispatch_chunk(state) abort
+    let l:bufnr = a:state.bufnr
+    if a:state.session != getbufvar(l:bufnr,
+        \ 'tokencount_active_session', 0)
+        return
+    endif
+    let l:idx = a:state.idx
+    let l:total = a:state.total
+    let l:l1 = a:state.l1 + l:idx * g:tokencount_chunk_lines
+    let l:l2 = min([a:state.l2,
+        \ l:l1 + g:tokencount_chunk_lines - 1])
+    let l:lines = getbufline(l:bufnr, l:l1, l:l2)
+    if !empty(l:lines)
+        call s:send_chunk_payload(l:lines,
+            \ a:state.session, l:idx, l:total,
+            \ {'kind': 'buf', 'bufnr': l:bufnr,
+            \  'session': a:state.session})
+    endif
+    if l:idx + 1 < l:total
+        let l:next = copy(a:state)
+        let l:next.idx = l:idx + 1
+        call timer_start(0, {-> s:dispatch_chunk(l:next)})
+    endif
+endfunc
+
 func! s:send() abort
     if mode() !~# "[vV\<C-v>]"
         let b:tokencount_value = 0
         call s:redraw_soon()
+        return
+    endif
+    let l:m = mode()
+    if l:m ==# 'V' && g:tokencount_chunk_lines > 0
+        let l:l1 = min([line('v'), line('.')])
+        let l:l2 = max([line('v'), line('.')])
+        let l:nlines = l:l2 - l:l1 + 1
+        if l:nlines <= 0
+            let b:tokencount_value = 0
+            call s:redraw_soon()
+            return
+        endif
+        if g:tokencount_fast
+            let l:lines = getbufline(bufnr('%'), l:l1, l:l2)
+            let b:tokencount_value = s:fast_count(l:lines)
+            call s:redraw_soon()
+            return
+        endif
+        let s:next_session += 1
+        let b:tokencount_active_session = s:next_session
+        let l:total = (l:nlines + g:tokencount_chunk_lines - 1)
+            \ / g:tokencount_chunk_lines
+        let l:state = {
+            \ 'bufnr': bufnr('%'),
+            \ 'session': s:next_session,
+            \ 'l1': l:l1,
+            \ 'l2': l:l2,
+            \ 'idx': 0,
+            \ 'total': l:total,
+            \ }
+        call timer_start(0, {-> s:dispatch_chunk(l:state)})
         return
     endif
     let l:lines = s:visual_lines()
@@ -157,4 +233,8 @@ endfunc
 
 func! tokencount#_test_pend(seq, target) abort
     let s:pending[a:seq] = a:target
+endfunc
+
+func! tokencount#_test_dispatch(state) abort
+    call s:dispatch_chunk(a:state)
 endfunc

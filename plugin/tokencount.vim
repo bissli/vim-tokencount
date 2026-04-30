@@ -7,6 +7,7 @@ let g:tokencount_executable = get(g:, 'tokencount_executable',
 let g:tokencount_debounce_ms = get(g:, 'tokencount_debounce_ms', 40)
 let g:tokencount_label       = get(g:, 'tokencount_label', 'Tok:')
 let g:tokencount_fast        = get(g:, 'tokencount_fast', 0)
+let g:tokencount_chunk_lines = get(g:, 'tokencount_chunk_lines', 4000)
 
 if !has('job') || !has('timers') | finish | endif
 if v:version < 901 || !exists('*str2blob') | finish | endif

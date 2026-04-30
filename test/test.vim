@@ -216,6 +216,77 @@ func! Test_count_range_huge_buffer_echoes_placeholder_immediately() abort
 endfunc
 
 
+" -- chunked dispatch -------------------------------------------------
+
+func! Test_on_reply_drops_chunk_with_stale_session() abort
+    enew!
+    file bufChunkStale
+    let l:buf = bufnr('%')
+    call setbufvar(l:buf, 'tokencount_active_session', 5)
+    call setbufvar(l:buf, 'tokencount_value', 99)
+    call tokencount#_test_pend(700,
+        \ {'kind': 'buf', 'bufnr': l:buf, 'session': 4})
+    call s:on_reply(0, '700 1234')
+    call assert_equal(99, getbufvar(l:buf, 'tokencount_value'))
+endfunc
+
+func! Test_on_reply_applies_chunk_with_current_session() abort
+    enew!
+    file bufChunkFresh
+    let l:buf = bufnr('%')
+    call setbufvar(l:buf, 'tokencount_active_session', 8)
+    call setbufvar(l:buf, 'tokencount_value', 99)
+    call tokencount#_test_pend(701,
+        \ {'kind': 'buf', 'bufnr': l:buf, 'session': 8})
+    call s:on_reply(0, '701 4321')
+    call assert_equal(4321, getbufvar(l:buf, 'tokencount_value'))
+endfunc
+
+func! Test_dispatch_chunk_skips_when_session_changed() abort
+    enew!
+    file bufDispatchSkip
+    let l:buf = bufnr('%')
+    call setline(1, repeat(['line'], 10))
+    let g:tokencount_executable = '/nonexistent/binary'
+    call setbufvar(l:buf, 'tokencount_active_session', 99)
+    let l:state = {'bufnr': l:buf, 'session': 7,
+        \ 'l1': 1, 'l2': 10, 'idx': 0, 'total': 1}
+    let l:before = len(v:errors)
+    call tokencount#_test_dispatch(l:state)
+    call assert_equal(l:before, len(v:errors))
+endfunc
+
+func! Test_send_returns_under_budget_for_huge_v_selection() abort
+    enew!
+    file bufSendBudget
+    let g:tokencount_executable = '/nonexistent/binary'
+    let g:tokencount_fast = 0
+    let g:tokencount_chunk_lines = 4000
+    call setline(1, repeat(['lorem ipsum'], 50000))
+    normal! ggVG
+    let l:start = reltime()
+    silent doautocmd CursorMoved
+    let l:elapsed_ms = float2nr(reltimefloat(reltime(l:start)) * 1000)
+    silent normal! \<Esc>
+    call assert_true(l:elapsed_ms < 100,
+        \ 'CursorMoved scheduling took ' . l:elapsed_ms
+        \ . 'ms on 50k-line V selection')
+endfunc
+
+func! Test_send_chunk_total_math() abort
+    enew!
+    let g:tokencount_chunk_lines = 4000
+    " 1 line: 1 chunk; 4000 lines: 1 chunk; 4001: 2 chunks; 8001: 3.
+    let l:cases = [[1, 1], [4000, 1], [4001, 2], [8000, 2], [8001, 3]]
+    for [l:n, l:expected] in l:cases
+        let l:got = (l:n + g:tokencount_chunk_lines - 1)
+            \ / g:tokencount_chunk_lines
+        call assert_equal(l:expected, l:got,
+            \ printf('chunks for %d lines', l:n))
+    endfor
+endfunc
+
+
 " -- run all ------------------------------------------------------------
 
 let s:tests = [
@@ -249,6 +320,16 @@ let s:tests = [
     \  function('Test_count_range_fast_mode_echoes_immediately')],
     \ ['count_range_huge_buffer_echoes_placeholder_immediately',
     \  function('Test_count_range_huge_buffer_echoes_placeholder_immediately')],
+    \ ['on_reply_drops_chunk_with_stale_session',
+    \  function('Test_on_reply_drops_chunk_with_stale_session')],
+    \ ['on_reply_applies_chunk_with_current_session',
+    \  function('Test_on_reply_applies_chunk_with_current_session')],
+    \ ['dispatch_chunk_skips_when_session_changed',
+    \  function('Test_dispatch_chunk_skips_when_session_changed')],
+    \ ['send_returns_under_budget_for_huge_v_selection',
+    \  function('Test_send_returns_under_budget_for_huge_v_selection')],
+    \ ['send_chunk_total_math',
+    \  function('Test_send_chunk_total_math')],
     \ ]
 
 for [s:name, s:F] in s:tests
